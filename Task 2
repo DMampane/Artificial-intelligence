@@ -1,0 +1,75 @@
+import cv2
+import numpy as np
+from imutils.video import VideoStream
+import time
+import getpass  # For password input
+
+# Constants
+PASSWORD = "mypassword"  # Replace this with the desired password
+AUTHORIZED = False       # To keep track of unlock status
+
+# Load the pre-trained face detection model
+print("[INFO] Loading face detection model...")
+net = cv2.dnn.readNetFromCaffe("deploy.prototxt.txt", "res10_300x300_ssd_iter_140000.caffemodel")
+
+# Start the webcam video stream
+print("[INFO] Starting video stream...")
+vs = VideoStream(src=0).start()
+time.sleep(2.0)
+
+while True:
+    # Read the current frame from the webcam
+    frame = vs.read()
+    frame = cv2.resize(frame, (720, 480))  # Resize frame for performance
+    (h, w) = frame.shape[:2]
+
+    # Prepare the frame for detection
+    blob = cv2.dnn.blobFromImage(cv2.resize(frame, (300, 300)), 1.0, (300, 300), (104.0, 177.0, 123.0))
+
+    # Perform face detection
+    net.setInput(blob)
+    detections = net.forward()
+
+    face_detected = False
+
+    # Loop through detections to identify faces
+    for i in range(0, detections.shape[2]):
+        confidence = detections[0, 0, i, 2]
+        if confidence > 0.5:  # Confidence threshold
+            face_detected = True
+            # Draw a bounding box around the detected face
+            box = detections[0, 0, i, 3:7] * np.array([w, h, w, h])
+            (startX, startY, endX, endY) = box.astype("int")
+            cv2.rectangle(frame, (startX, startY), (endX, endY), (0, 255, 0), 2)
+            cv2.putText(frame, f"Face Detected ({confidence*100:.1f}%)",
+                        (startX, startY - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 0), 2)
+
+    # Display the video frame
+    cv2.imshow("Face Detection - PC Unlock", frame)
+
+    # If face is detected, prompt for a password
+    if face_detected:
+        print("[INFO] Face detected. Waiting for password input...")
+        entered_password = getpass.getpass(prompt="Enter Password: ")
+
+        if entered_password == PASSWORD:
+            print("[INFO] Access Granted! PC Unlocked.")
+            AUTHORIZED = True
+            break  # Exit the loop if unlocked
+        else:
+            print("[ERROR] Incorrect password. Try again.")
+
+    # Exit the program on pressing 'q'
+    if cv2.waitKey(1) & 0xFF == ord("q"):
+        print("[INFO] Exiting...")
+        break
+
+# Cleanup
+print("[INFO] Cleaning up...")
+cv2.destroyAllWindows()
+vs.stop()
+
+if AUTHORIZED:
+    print("[INFO] PC is now unlocked!")
+else:
+    print("[INFO] PC remains locked.")
