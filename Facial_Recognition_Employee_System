@@ -1,0 +1,114 @@
+import sqlite3
+import face_recognition
+import cv2
+import numpy as np
+import pickle
+
+# Step 1: Initialize Database
+def initialize_db():
+    conn = sqlite3.connect("makie_users.db")
+    cursor = conn.cursor()
+    cursor.execute('''CREATE TABLE IF NOT EXISTS cards (
+                        id INTEGER PRIMARY KEY,
+                        name TEXT NOT NULL,
+                        surname TEXT NOT NULL,
+                        id_number TEXT UNIQUE NOT NULL,
+                        trip_balance REAL NOT NULL,
+                        face_encoding BLOB NOT NULL)''')
+    conn.commit()
+    conn.close()
+
+def add_user_to_db(name, surname, id_number, trip_balance, face_encoding):
+    conn = sqlite3.connect("makie_users.db")
+    cursor = conn.cursor()
+    cursor.execute('''INSERT INTO cards (name, surname, id_number, trip_balance, face_encoding)
+                      VALUES (?, ?, ?, ?, ?)''', (name, surname, id_number, trip_balance, face_encoding))
+    conn.commit()
+    conn.close()
+
+# Initialize database
+initialize_db()
+
+# Step 2: Capture and Encode Face
+def capture_and_encode_face(name, surname, id_number, trip_balance):
+    video_capture = cv2.VideoCapture(0)
+    print("Look at the camera to register your face with Makie.")
+    
+    while True:
+        ret, frame = video_capture.read()
+        rgb_frame = frame[:, :, ::-1]
+        face_locations = face_recognition.face_locations(rgb_frame)
+        face_encodings = face_recognition.face_encodings(rgb_frame, face_locations)
+
+        if len(face_encodings) > 0:
+            print("Face captured and encoded successfully! Welcome to Makie!")
+            video_capture.release()
+            cv2.destroyAllWindows()
+            # Store the face encoding as a binary object
+            face_encoding_blob = pickle.dumps(face_encodings[0])
+            add_user_to_db(name, surname, id_number, trip_balance, face_encoding_blob)
+            break
+
+        cv2.imshow('Register with Makie', frame)
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+
+    video_capture.release()
+    cv2.destroyAllWindows()
+
+# Step 3: Recognize and Validate Trip
+def recognize_and_validate_trip():
+    conn = sqlite3.connect("makie_users.db")
+    cursor = conn.cursor()
+
+    video_capture = cv2.VideoCapture(0)
+    print("Position yourself in front of the camera for Makie to verify your identity.")
+
+    while True:
+        ret, frame = video_capture.read()
+        rgb_frame = frame[:, :, ::-1]
+        face_locations = face_recognition.face_locations(rgb_frame)
+        face_encodings = face_recognition.face_encodings(rgb_frame, face_locations)
+
+        for face_encoding in face_encodings:
+            # Retrieve all users and compare face encodings
+            cursor.execute("SELECT name, surname, id_number, trip_balance, face_encoding FROM cards")
+            for row in cursor.fetchall():
+                name, surname, id_number, trip_balance, face_encoding_blob = row
+                stored_face_encoding = pickle.loads(face_encoding_blob)
+
+                # Compare the live face encoding with the stored one
+                match = face_recognition.compare_faces([stored_face_encoding], face_encoding, tolerance=0.6)
+                if match[0]:
+                    print(f"Makie welcomes you, {name} {surname}!")
+                    print(f"ID: {id_number} | Remaining Balance: ${trip_balance:.2f}")
+                    video_capture.release()
+                    cv2.destroyAllWindows()
+                    conn.close()
+                    return
+
+        cv2.imshow('Makie Verification', frame)
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+
+    video_capture.release()
+    cv2.destroyAllWindows()
+    conn.close()
+
+# Step 4: Main Program
+if __name__ == "__main__":
+    print("Welcome to Makie!")
+    print("1. Register New User")
+    print("2. Verify Trip and Check Balance")
+    choice = input("Enter your choice (1/2): ")
+
+    if choice == '1':
+        name = input("Enter your name: ")
+        surname = input("Enter your surname: ")
+        id_number = input("Enter your ID number: ")
+        trip_balance = float(input("Enter initial trip balance: "))
+        capture_and_encode_face(name, surname, id_number, trip_balance)
+    elif choice == '2':
+        recognize_and_validate_trip()
+    else:
+        print("Invalid choice. Exiting Makie.")
